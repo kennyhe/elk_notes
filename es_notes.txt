@@ -1,0 +1,636 @@
+Created by Kenny He on 09/27/2020
+
+1. Setup: port 9200
+Cluster:
+  bin/elasticsearch -d
+Replica:
+  bin/elasticsearch -E node.name=node1 -E path.data=fenhy_1_data -d
+
+
+2. Java env:
+export JAVA_HOME=$HOME/elasticsearch/jdk/
+export PATH=$PATH:$JAVA_HOME/bin
+
+
+3. Kibana: port 5601
+  bin/kibana serve -q
+
+
+4. Logstash: port 
+  bin/logstash -f logstash.conf
+
+
+5. Another client: Manage clusters, nodes, indexes (GUI)
+  cerebro-0.9.2, port 9000, need to enter the ES cluster url and port.
+  https://github.com/lmenezes/cerebro/releases
+
+
+6. RESTful API in Dev Tools
+CRUD: PUT/GET/POST/DELETE (case insensitive)
+Batch: POST _bulk 
+Mget: GET _mget
+Each failure won't impact to the executing of other requests in the bulk.
+
+e.g. To run tests, we can call PUT /my_index/_bulk and follow with multiple records in the following format:
+{"index":{"_id":1}}   # line1: id
+{"field1":"value11", "field2":"value12", ...}  # line2, K/V pairs
+{"index":{"_id":2}}
+{"field1":"value21", "field2":"value22", ...}
+
+
+
+7. Internal token analyzer:
+Each token analyzer include "Tokenizer + Token filters"
+Sandard: standard tokenizer + standard+lowercase+stop(stop is off by default) filters: default, by word, lowercase
+Simple: lowercase Tokenizer: Split by regex"[^a-zA-Z]", remove the symbols and numbers, and to lower case.
+Stop: lowercase tokenizer + stop filter: remove (the, a, is, in, at, ...)
+Whitespace: whitespace tokenizer: split("\s+")
+Keyword: Keyword tokenizer: output === input. So if we would like to use the entire input as the search key then we can use this one.
+Pattern: split by RegEx. By default use split("\W+")
+Language: English, French, and other languages. It automatically normalize the words, e.g. foxes -> fox, dogs -> dog. Also apply the "stop" filter.
+Customer:
+ICU-Analyzer: Character Filters(Normalization) + Tokenizer (ICU tokenizer) + Normalization/Folding/Collation/Transform filters. Support Unicode
+Other Chinese tokenizers: IK (github search analysis-ik)支持自定义词库和热更新分词词典, THULAC (github: thulac)清华大学ＮＬＰ实验室的中文分词器
+
+
+
+Tokenizer API:
+GET  _analyze
+{
+  "analyzer": "icu_analyzer",  # need to install icu_analyzer plug-in. "我", "喜欢", "看书"
+  "text": "我喜欢看书"
+}
+
+POST  books/_analyze   # test the tokenizer of a specific field with some test text.
+{
+  "field": "title",
+  "text": "React Quickly"
+}
+
+post /_analyze   # Customized tokenizer: internal tokenizer + filter
+{
+    "tokenizer": "standard",
+    "filter": ["lowercase"],
+    "text": "some text"
+}
+
+8. Search API
+ * URI Search
+   - Search parameters in URL
+ * Request Body Search
+   - JSON format Query Domain Specific Language (DSL)
+
+ * Sort result: rank by score (relevance).
+
+Information Retrieval:
+ * Precision(查准率): Discard the irrelevant documents = TP/(TP+FP)
+ * Recall(查全率): Return as many relevant documents as possible = TP/(TP+FN)
+ * Ranking: Sort by relevance (score).
+ Reduce "True negative" and "false positive"
+
+9. Search
+URL Query:
+GET /movies/_search?q=2020&df=field_name&sort=year:desc&from=0&size=10&timeout=1s
+{
+    "profile": true
+}
+q: value match
+df: field name
+from, size: pagination. from is zero-based. e.g. to get 100-150: {"from":100,"size":51}
+profile: Explain how to query
+
+Sort the results
+By default: Sort by score
+Customize sort: "sort":[{"field_1":{"order":"desc"}}, {"_doc":{"order":"asc"}}, "_score":{"order":"desc"}]
+Once specify the sort field, the scores in result are either "null" or a constant ("match_all").
+Cannot sort on text type fields (reversed index are created against the terms, not the entire field).
+  - To sort a text field: set "fielddata":true in mapping, then ES will dynamically create (direct, not reversed) index on the entire field in memory when sort.
+  - Another way: set "doc_values":true, then ES create both direct and reversed index for that text field and persist the index on the disk. By default its value is "true". We can change it to "false" to speed up the index and reduce the disk usage. When its value is changed, ES will recreate the index.
+  - Compare: https://qbox.io/blog/elasticsearch-5-0-general-performance-recommendations, https://www.elastic.co/guide/en/elasticsearch/reference/current/doc-values.html, https://www.elastic.co/guide/en/elasticsearch/reference/current/fielddata.html
+
+Pagination: From & Size & Deep Pagination problem
+Result window: from + size. Hard limit: 10000
+"search_after": Get the next page. Cannot specify the "from", and can only get the next page. "search_after":["last_sort_key1_value", "last_sort_key2_value", ...]
+https://www.elastic.co/guide/en/elasticsearch/reference/7.9/paginate-search-results.html#search-after
+How "search_after" avoid "Deep pagination problem": Get the documents from limited partition(s). Not from all partitions.
+
+Scroll API:
+Create a snapshot of the query, and set a TTL. During the TTL, load the search result pages from the snapshot. And new documents cannot be searched.
+POST /my_index/_search?scroll=5m      or put the "scroll" and "scroll_id" in request body.
+https://www.elastic.co/guide/en/elasticsearch/reference/7.9/paginate-search-results.html#scroll-search-results
+
+Different search type and scenarios:
+  * Regular: Get top N documents (e.g. latest orders)
+  * Scroll: Get all documents of a single search.
+  * Pagination: from+size, or "search after"
+
+Tricks:
+  * In the design stage, always use "profile" to explain how the query is executed. Don't use it in prod.
+  * Combine q and df: q=field_name:value
+  * Term query: q=Beautiful Mind: contains("Beautiful") or contains("Mind")
+  * Phrase query: q="Beautiful Mind": contains("Beautiful Mind")
+  * title="Beautiful Mind"
+  * AND, OR, NOT, &&, ||, !
+    - title:(Beautiful AND Mind)
+    - title:(Beautiful OR Mind)
+  * +: must have, -: must exclude
+    - title:(+matrix -reloaded)
+  * Range: [] closed range, {} open range.
+    - year: {2009 TO 2018]: from 2010 to 2018
+    - year: [* TO 2018]
+  * Arithmatic: >, <, >=, <=. Can combine with + and/or -
+    - year:>2001
+    - year:(>2010 && <= 2018)
+    - year:(+>2010 +<=2018)  # the same effect as above
+  * approximite queries: ?(1 char), * (0-n chars), regex, ~(fuzzy match)
+    - title:mi?d
+    - title:be*
+    - title:[bt]oy
+    - title:beautifl~1
+    - title:"lord rings"~2
+
+Body Query (Using DSL)
+  * query, match, range, match_phrase, query_string, simple_query_string, etc.
+GET /movies/_search
+{
+    "query": {
+        "match": {
+            "title": "Beautiful"
+        }
+    }
+}          # q=title:Beautiful
+GET /movies/_search
+{"query":{"match_all":{}}}  # return all results
+
+Q1: "match" vs. "match_phrase": 1) "OR" vs. "AND"; 2) Order matters in the later.
+Q2: If you want more results in a "match_phrase" query: Increase the Recall TP/(TP+FN) value by adding a "slop" parameter (default 0).
+About "slop": https://stackoverflow.com/questions/21781267/exact-meaning-of-slop-in-lucene-spannearquery-or-slop-in-elasticsearch-span-n
+
+
+10. Mapping & Dynamic mapping
+Like the schema definition in DB: filed name, type, field/index configuration (analyzed, not analyzed, analyzer), etc.
+Mapping: map JSON doc -> Lucene data format
+Simple types: Text/Date/Integer/Long/Floating/Boolean/IPv4&IPv6
+Composite: Object/Hierachical/Composite
+Special types: geo_point & geo_shape / percolator
+
+Dynamic mapping: Elastic Search can dynamically get the field types (not always correct).
+Need to explicitly claim the types for some fields, e.g. geo_point or location, numbers.
+For JSON types, auto detect types in text, and convert to date.
+GET myindex/_mapping     # Check the auto mapping of the data types by input
+
+Mutate the field types:
+  * Dynamic Mappings control via API
+    PUT my_index
+    {"mappings":{"_doc":{"dynamic":"false"}}}     # Accept a String (not Boolean) value: "true", "false", "strict".
+  * Add more fields (not about the data)
+    - when Dynamic==true, Mappings are updated when new documents are added
+    - when Dynamic==false, Mapping is not updated. new fileds cannot be indexed (cannot search the value). But the information are added to _source.
+    - when Dynamic==Strict, Cannot add new document if the new document has a different schema.
+  * Existing field: Once the data is added, the field type will not be updated.
+    - Lucene reversed index cannot be updated once it is created.
+    - If try to put data with invalid type (e.g. invalid date), the API will fail with error
+    - Ref: Built-in types: https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-params.html
+  * To change the field types, we must call reindex API to recreate the index
+  * Get the mappings (only the fields in the mappings can be indexed and searched):
+    GET my_index/_mapping
+The index for different types of data are different. Once the data type is changed, the old index no longer works.
+
+
+11. Customized/Explicit Mapping
+Best practice:
+  * Create a temporary index, write some sample data, then the system can generate default (dynamic) mappings
+  * Call "GET temp_index/_mapping" to get the mapping, and create API call body based on it (e.g. change the mapping when necessary)
+  * Some commonly used customizable fields:
+    - "index": false to disable indexing on certain fields to: Not create index on field_name; reduce index size; make values in field_name not searchable
+    - "index_options": Control the content in the reversed index: docs(doc id) / freqs (doc id & term frequencies) / positions(freqs + term position) / offsets(positions + character offsets in doc). By default, Text type fields indexed with "positions", while fields with other type are indexed with docs.  (How to optimize the index options for logs? Change to "docs" to speed up?) The more info, the more space required and the performance may be slower (need to test & benchmark)
+    - "copy_to": Copy field values to a target field to compose a new field. e.g.: {"properties":{"firstname":{"type":"text","copy_to":"fullname"},"lastname":{"type":"text","copy_to":"fullname"}}}. The target field name ("fullname" in example) will not appear in _source field list.
+    - "null_value": something to replace the null values to "something", and then index with the "something". But in the _source values, the value is still the null (original value).
+    - Array: There is no array type. But we can specify array values ["v1", "v2"].
+    - "ignore_above": N to ignore the characters after the Nth character in the text. For text in an array, ignore for each individual text.
+  * Delete temp_index, then run the API call to create/update index with the mapping properties
+
+12. Multiple field types
+Multiple child fields for different indexing purposes. e.g.:
+{"mappings":{"properties":{"company":{"type":"text", "fields":{
+    "keyword":{"type":"keyword", "ignore_above":256},    # the first child field
+    "field2":{"type":"text", "analyzer":"english", "search_analyzer":"english"}, # 2nd child field, tokenize and search by "english"
+    "field3":{"type":"text", "analyzer":"pinyin", "search_analyzer":"pinyin"}    # 2nd child field, tokenize and search by "pinyin"
+}}}}}
+
+13. Exact Values vs. Full Text
+Exact value: Number/Date/keyword. Match the entire field to the query. The field need not be tokenized.
+Full Text: text. Match the tokenized words. (e.g. search the logs)
+
+14. Customized Tokenizer
+If the built-in tokenizers cannot satisfy the requirements.
+  * Character Filters: Process the text before Tokenizers. Can have multiple Character filters.
+    - Add/delete/replace characters.
+    - position & offset may be changed in the Tokenizers
+    - Built-in: HTML strip / Mapping (replace strings) / Pattern (RegEx) replace
+  * Tokenizer: Cut the text into terms or tokens
+    - Built-in: whitespace / standard / uax_url_email / pattern / keyword / path hierachy
+    - Develop a new Tokenizer with Java plug-ins
+  * Token filters: Process the output of Tokenizers: Add/replace/delete
+    - Built-in: lowercase / stop / synonym
+
+15. Index template
+Define index properties: Mappings + Settings (e.g. # of replicas), and AUTOMATICALLY apply to new indexes which matches the "index_patterns":
+  * Only applied when the index is created. Changing a template won't mutate an existing index.
+  * Can specify the order (for override): Explicit settings --(override)-> high order template settings -> lower order settings -> default settings
+  * Can merge multiple templates. Override by order.
+API calls:
+  * PUT /_template/my_template
+    {"index_patterns":["some_index*"], "order": 1, "settings": {...}, "mappings": {...}}
+    - Note: since the index_patterns include "*", it will be automatically applied to all new indexes with name prefix "some_index".
+  * GET /_template/my_template
+  * GET /_template/temp_prefix*   # Describe multiple templates whose name start with the "temp_prefix"
+
+16. Dynamic template
+Define the rules to dynamically apply the types or settings by checking the FIELD NAMES.
+  * e.g.
+    - Set the text fields to "keyword", or vice versa.
+    - If field name has "is" prefix then set the field type to Boolean
+    - If filed name has "long_" prefix then set the field type to long
+    - If the field path is "name.*" and not ".middle", then copy the field value into "full_name" (a virtual field)
+
+
+17. Aggregation: Data statistics + analysis (real-time, high performance)
+Why: Hadoop (T+1, too long to get the result). ES can quickly get an overview.
+e.g. Quickly get summary: price ranges; sub totals
+Can quickly get the aggregation result with a single query. Without extra processing in the client side. (e.g. Kibana reports)
+https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations.html
+  * Bucket Aggregation: Ranges, histograms, sets of documents per criteria/group ("terms":{"field": "filed_name_to_group"})
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html
+    - For text field, need to set "fielddata" or "doc value" in mappings. Ref section 9.
+    - Warm up global ordinals: "eager_global_ordinals": true
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/tune-for-search-speed.html
+  * Metric Aggregation: Statistics:
+    - Single output: avg/max/min/medium/p99/p95/p90/cardinality(distinct count)/...
+    - Multiple output: stats/percentiles/percentile_ranks
+  * Pipeline Aggregation: "buckets_path": "jobs>avg_salary>...". -> jobs -> average salary ->...
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-pipeline.html
+  * Matrix Aggregation: Operation on multiple fields and output a matrix
+  * Scope: Query (default) / Filter / post filter / global
+  * Statistics accuracy analysis: Data amount / Accuracy / Real-time (like CAP, need trade off, cannot satisfy all):
+    - Off line batch (no real-time) / Approximate Computing / Compute limited data samples
+    - Query parameters: "doc_count_error_upper_bound", "sum_other_doc_count", "shard_size"
+
+Example 1:
+# SQL: SELECT avg(AvgTicketPrice) "average_price", max(AvgTicketPrice) "max_price", min(AvgTicketPrice) "min_price"
+#      FROM kibana_sample_data_flights
+#      GROUP BY DestCountry
+GET kibana_sample_data_flights/_search
+{"size":0, "aggs":{                               # Must specify the "size":0 to return aggregation result only
+    "flight_dest": {
+        "terms":{"field":"DestCountry"},          # Group by DestCountry
+        "aggs": {
+            "average_price": {"avg": {"field": "AvgTicketPrice"}},  # Apply the metrics aggregation in the group
+            "max_price": {"max": {"field": "AvgTicketPrice"}},
+            "min_price": {"min": {"field": "AvgTicketPrice"}}
+        }
+    }
+}}
+
+Example 2:
+# Hierachical aggregation. Group by country, retrieve the average price, and then group by weather:
+GET kibana_sample_data_flights/_search
+{"size":0, "aggs":{                               # Must specify the "size":0 to aggregate
+    "flight_dest": {
+        "terms":{"field":"DestCountry"},          # Group by DestCountry
+        "aggs": {
+            "average_price": {"avg": {"field": "AvgTicketPrice"}},  # Average price in country group
+            "weather": {"terms": {"field": "DestWeather"}}          # 2nd group by weather in that country
+        }
+    }
+}}
+
+
+
+18. Term search vs. Full-text search
+Term: minimum semantics unit. Can be used for structured query (similar as SQL queries)
+Term level query:
+  * term/range/exists/prefix/wildcard
+  * No tokenization. Do exact match or comparison, and calculate the relevance score for each document.
+  * Can add "constant_score" parameter to convert the query to a "filtering" to skip the score calculation and reuse the cache (improve performance in prod)
+  * To match the original data, can try "field_name.keyword", to exact match the child field name "keyword".
+  * Otherwise, need to consider the tokenization in the original text (split, stop, lowercase, ...)
+e.g. Data: {"productID": "XHDK-A-1293-#fJ3", "desc": "iPhone"}
+POST /products/_search
+{"query":{"term":{"desc":{"value":"iPhone"}}}}           # No result. Because "iPhone" -> "iphone" in the index after tokenization
+{"query":{"term":{"desc.keyword":{"value":"iPhone"}}}}   # Match. Uses the "keyword" child field name
+{"query":{"term":{"desc":{"value":"iphone"}}}}           # Match.
+{"query":{"term":{"desc.keyword":{"value":"iphone"}}}}   # No result. The "keyword" value only matches the substr(original_text, 256), 256 is the default value of "ignore_above" property.
+{"query":{"term":{"productID":{"value":"XHDK-A-1293-#fJ3"}}}}   # No result
+{"query":{"term":{"productID":{"value":"xhdk"}}}}               # Match. tokenized "xhdk", "a", "1293", "fj3"
+{"query":{"term":{"productID":{"value":"fj3"}}}}                # Match
+{"query":{"term":{"productID":{"value":"#fj3"}}}}               # No result
+{"query":{"term":{"productID.keyword":{"value":"XHDK-A-1293-#fJ3"}}}}   # Match
+  * To help understand the tokenization and mapping:
+    - Check the mapping: GET /products/_mapping
+    - Check the tokenization: POST /analyze {"analyzer": "standard", "text": "XHDK-A-1293-#fJ3"}
+  * Skip score calculation and reuse the cache to improve performance
+{"query":{"constant_score":{"filter":{"term":{"productID.keyword":{"value":"XHDK-A-1293-#fJ3"}}}}}}
+
+Full-text Search: Tokenize the query string.
+  * match/match_phrase/query_string
+  * Tokenization in indexing/search process. Can use different tokenizer in these two processes.
+  * Query handling:
+    - Tokenizing the query string
+    - Run the queries for each key
+    - Merge the results
+    - Calculate a score for each document
+    - Sort the result by the score and return the list of results (or sort by the specified field in the query)
+
+19. Relevance and Score Calculation
+How much a document related with a query string. ES will calculate score for each document (and by default sort the results by the score)
+Score algorithm: TF-IDF (before v5), BM25 (>= v5)
+
+TF: Term Frequency (in a document): (times of the term) / (words in a document)
+Simple relevance = TF(term1) + TF(term2) + TF(term3) + ...
+Remove stop words: They have very high frequency but not contribute to the relevance. Suggest to remove.
+
+DF: Document Frequency: The frequency of the term appearence in all documents. (also need to ignore the stop words)
+IDF: Inverse Document Frequency = log(# of all documents / # of documents contain the term)
+TF-IDF: Simple relevance ==> Weight calculation of relevance:
+  = TF(term1) * IDF(term1) + TF(term2) * IDF(term2) + TF(term3) * IDF(term3) + ...
+Ref papers:
+  * https://www.cl.cam.ac.uk/archive/ksj21/ksjdigipapers/jdoc04.pdf
+  * http://www.staff.city.ac.uk/~sbrp622/papers/foundations_bm25_review.pdf
+
+TF-IDF in Lucene (and early ES)
+  * https://lucene.apache.org/core/4_0_0/core/org/apache/lucene/search/similarities/TFIDFSimilarity.html
+  * coord(q, d): How many times the query term appears in the doc
+  * queryNorm(q): Irrelevant with the doc. Just used for comparing the query.
+  * boost(t): Search time boot of a term in the query.
+  * norm(t, d): lengthNorm * sum(Field Boost). The shorter the fields, the higher score.
+
+TF-IDF vs. BM25:
+When TF grows to infinite, classical TF-IDF grows. But BM25 score will get close to a specific number.
+Ref: http://www.kmwllc.com/index.php/2020/03/20/understanding-tf-idf-and-bm25/
+
+Customized Similarity:
+Index settings: PUT /my_index
+{"settings":{"similarity":{"custom_similarity":{"type":"BM25", "b":0, "k1": 2}}}}
+  * k1: default: 1.2. The smaller k, the higher saturization
+  * b: default: 0.75. 0 means no normalization
+
+How to profile the score in the queries:
+  * Add "explaine":true in the query body, to check the score explanation.
+  * Boosting Relevance: Control the relevance of a index, field, or query:
+    - {"query":{"boosting":{
+         "positive":{"term":{"content":"term1"}},
+         "negative":{"term":{"content":"term2"}},
+         "negative_boost": 0.2,
+      }}}
+    - boost > 1: boost the relevance score
+    - 0 < boost < 1: lower the relevance score
+    - boost < 0: negative impact to the relevance score (the similar effect as "-")
+
+20. Query Context vs. Filter Context
+Query Context: Calculate scores
+Filter Context: No scores (just yes/no). So we can take advantage the cache to improve the performance. 
+  Refer to the "18. term search", how to skip the score calculation
+
+Bool Query:
+  * must/should: Query, calculate score.
+  * must_not/filter: Filter, not calculate score.
+  * Can be in any order, or in hierachy (but that also impact to the score calculation).
+  * If no "must" clause, then the results need match at least one "should" criteria
+  * Can set boost for each bool query, e.g.:
+    - "Apple Pie", "Apple iPad": To search Apple products, can reduce the boost of "pie" and increase the boost of "ipad", "iphone", "mac", etc.
+    - With this tricks, we won't miss any result with "Apple" keyword, but we can make sure that the Apple products won't miss even if the document contains "pie".
+Example:
+{"query":{"bool":{
+    "must":{"term":{"price":"30"}},
+    "filter":{"term":{"available":"true"}},
+    "must_not":{"range":{"price":{"lte":10}}},
+    "should":[{"term":{"field_name1":"value1"}}, {"term":{"field_name2":"value2"}}],
+    "minimum_should_match": 1
+}}}
+
+
+21. Disjunction Max Query
+"should": Simply add the score on multiple fields (e.g. "title", "body").
+"dis_max": Return the max score of the fields. If a single score has highest score, use that score for the entire doc.
+  "tie_break": When there is a tie when doing "dis_max", then apply different weight to different fields to break the tie.
+Example:
+{"query": {"dis_max": { "queries": [
+  { "match": { "title": "Quick fox" }},
+  { "match": { "body":  "Quick fox" }}
+]}}}   // simple dis_max. may tie
+
+{"query": {"dis_max": { "queries": [
+  { "match": { "title": "Quick pets" }},
+  { "match": { "body":  "Quick pets" }}
+], "tie_break": 0.7}}}   // 
+Refer to: https://www.elastic.co/guide/en/elasticsearch/reference/7.9/query-dsl-dis-max-query.html
+
+
+22. Multi (fields) Match Query
+  * Best Fields (default): Multiple fields compete with each other. Return the best matched field. (e.g. "dis_max")
+  * Most fileds: (handling English text) extract the words from the main field (output by English tokenizer) find the anonyms and different mode (e.g. get, got, getting, ...), for more accurate match. For other fields, the more match, the better
+    - Add a new virtual field in mappings, which index with the output of standard tokenizer.
+    - Can customize the field boost to control the score contribution. e.g. "fields":["title", "title.std^10"] // the original text can get higher score
+  * Cross field: e.g. "firstname+lastname", "street"+"city"+"state"+"zip". The more matched fields, the better.
+    - Specify the fields to search
+    - Can also do with "copy_to". But that caused extra storage
+    - Can also customize the field boost.
+
+
+24. Natural language query, Improve Recall, Multi-Language
+Challenges: tokenization (English, Chinese, ambiguity, etc.) Dictionary; Minimized number of words; Statistics etc.
+Tools and plugins:
+  * IK: https://github.com/medcl/elasticsearch-analysis-ik
+    ./elasticsearch-plugin install https://github.com/medcl/elasticsearch-analysis-ik/releases/download/v7.9.1/elasticsearch-analysis-ik-7.9.1.zip
+  * HanLP: https://github.com/KennFalcon/elasticsearch-analysis-hanlp
+    Currently the latest version is for ES 7.5.1. Can dynamically load the dict from remote servers
+    Tokenizers: hanlp(default)/_standard/_index/_nlp/_n_short/_dijkstra/_crf(deprecated since 1.6.6)/_speed(fast)
+  * Pinyin Analysis: https://github.com/medcl/elasticsearch-analysis-pinyin
+    Latest release: 6.8.2. Lots of optional parameters to use.
+
+
+25. Search Template & Index Alias
+Query body is important for score calculation & performance
+Search template: Define a contract, to de-couple the work of different engineering roles: search engineer, performance engineer, etc.
+  * The performance engineer define a template
+    POST _scripts/my_template_name
+    {"script":{"lang":"something", "source":["field1", "field2"], "size": 20, "query":{....}}   # use {{param_name1}} to specify params in template
+    The parameter does not necessarily appear in "query" field. They can be in any field.
+  * The search engineer can call the template to run the query:
+    POST /my_index/_search/template
+    {"id":"my_template_name", "params":{"param_name1", "text to search"}}
+  * The performance engineer can modify the template. If the parameters are not changed, the search engineer need not to change the front end code.
+
+Index Alias: "symbol link" to Index.
+When the index is re-constructed, re-indexed, ..., just need to re-create the alias, without touching the front end code.
+
+26. Function Score Query
+Limit of "Scoring and Sorting": No flexible control to the sorting based on the relevance score.
+FSQ: Re-score after the query and sort on the new score.
+  * Weight: Provide a simple but not normalized weight for each document
+  * Field Value Factor: Change _score. e.g. Add factors on certain fields (add modifiers, e.g. log1p), and also can specify factor
+    - Can customize Boost Mode/Max Boost to control the boost factors.
+  * Random Score (can change the pseudo random numbers by using different seeds)
+  * Decay Functions
+  * Script Score
+Refer to: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-function-score-query.html
+
+
+27. Suggester API & Auto Complete: Search engine features
+4 Suggesters:
+  * Term / Phrase: Suggest for closed words
+  * Complete: Auto Complete. Need extra data structures (e.g. FST for prefix search, need to specify a field in mapping, and search that field in query)
+  * Context: Specify Category or Geo-Location. Need to specify "context" in mappings, documents, and queries.
+Use the parameters to control the suggestions.
+Ref: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
+
+Accuracy & Performance: Completion > Phrase > Term  (Completion has extra data structure to support)
+Recall: Term > Phrase > Completion
+
+
+28. Distributed Architecture & Scale up
+Single active master becomes the bottle neck and limit the scalability: Because of the meta (node, index, cluster state) data spike.
+Tribe Node (deprecated)
+Cross cluster search (recommended solution, since ES5.3):
+  * Any node can take federated node role, to proxy the search request
+  * Need not to join other cluster as Client node.
+  * Ref: https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-cross-cluster-search.html
+Steps:
+  * Add same settings in each cluster:
+    PUT _cluster/settings
+    {"persistent":{"cluster":{"remote":{
+      "cluster0":{"seeds":["master_ip_of_cluster0:port"], "transport.ping_schedule":"30s"},
+      "cluster1":{"seeds":["master_ip_of_cluster1:port"], "transport.compress":true, "skip_unavailable": true},
+      "cluster2":{"seeds":["master_ip_of_cluster2:port"]}, ...
+    }}}}
+  * Can create the same index on multiple clusters, but with different data
+  * Search in "cluster_name:index_name": GET /users,cluster1:users,cluster2:users/_search
+  * In Kibana, can create "Index Pattern" (e.g. *:users), then we can see the indexes on other clusters.
+  * Ref: https://kelonsoftware.com/cross-cluster-search-kibana/
+
+29. Distributed Architecture: horizontal scale up. PB level data, HA
+  * Multiple clusters (cluster name as ID): -E cluster.name=my_cluster1
+  * Node: An ES instance (a Java process, with a UUID under data folder): -E node.name=my_node1
+  * Coordinating Node: Route the request to the right node (e.g. create index to master node), handle the search requests. Can make it a dedicated coordinating node by setting the types (master) to false.
+  * Data Node: Can be used for storing shard data (scale up and replica, decided by master node). By default all nodes are data nodes. Can disable by "node.data:false". Master and replica shards will never be stored on the same data node.
+  * Master Node: Create/Edit/Delete index; assign data store nodes; Maintain / update cluster state.
+    - Prod: Avoid SPF. Multiple master nodes for HA. And the master nodes should not take other node roles.
+    - Multiple eligible nodes. When current master is down, do leader election
+    - By default each node is a master eligible node. Can disable by "node.master:false". The first master eligible node elect itself as Master.
+  * Cluster state: node info; index mappings/settings; shard routing. Only Master node can modify cluster states, and then propagate to all nodes.
+  * Leader election (among Master eligible nodes): Ping (heart beat). Once Master is down, the node with SMALLEST ID will be elected as new Master.
+    - Split Brain problem: Quorum. Only do leader election when (# of master eligible nodes) >=  Quorum. Quorum = (# of nodes)/2+1
+
+30. Inside Index
+Sharding:
+  * Primary shard: default 1. Can set multiple primary shards, and the number cannot be modified after index is created. (can change at reindexing).
+    - Too many primary shards make single shard size smaller. In consequence there will be too many shards on each node, and cause performance issue.
+  * Replica: Too many replica cause too many propagation cost and also reduce the writing performance.
+HA:
+  * GET /_cluster/health: Check cluster health
+  * When the master crash, will do leader election to get a new master
+  * When a data node crashes, the primary shards on that node die, then some replica will become primary. And create new replicas on other nodes.
+Document allocation: shard = hash(_routing) % number_of_primary_shards. By default using doc ID as _routing, and we can customize it per doc.
+  * Update a doc: hash->route to node and shard -> delete old doc -> create new doc -> index -> response success  (replicate in background)
+  * Delete a doc: hash->route to node and shard -> delete doc -> deleted -> index -> response success (replica delete in background)
+Inside shards: Minimum unit(a lucene index), near real-time, data persistence, append (mark delete)
+
+Inside Sharding:
+  * Index records are immutable.
+   - No worry about concurrent; avoid the performance loss caused by locks
+   - Write to I/O buffer in memory, so I/O won't be a bottleneck (another performance gain)
+   - Easy to match to cache / data can be compressed to save space
+   - Cannot update. Once a document is updated, need to mark the old index to invisible/disabled, and append a new record.
+  * Segment: A single reversed index file (immutable). A shard contains multiple Segments.
+  * When writing new document(s), the index is written to buffer, and then write to a new Segment on the disk. Query will be done against all Segments and the results will be consolidated.
+  * Commit Point: Track the meta data of all Segments
+  * .del file: Store the info of deleted documents.
+
+Refresh:
+  * The process of writing "index buffer" to Segment. (It doesn't exec fsync operation)
+  * Frequency: By default once per second, or when buffer is full (default threshold: 10% of JVM heap). Can be configure by "index.refresh_interval".
+  * Data can be searched after Refresh complete
+  * Massive document -> multiple Segments in a short time
+
+Transaction Log:
+  * Keep transaction log just in case the nodes crash before Refrsh (lose the index in the index buffer or I/O buffer)
+  * Like DBs, ES can recover the unfinished indexes from the transaction logs
+  * After ES Refresh, the index buffer is cleared, but the transaction logs are kept
+
+Flush & Lucene Commit
+  * Call Refresh, clear index buffer and wait for next Refresh
+  * Call fsync when necessary, write the I/O buffer (not index buffer) to Segments on the disks
+  * Clear transaction log
+  * Frequency: By default once per 30 minutes, or when transaction log (default size 512MB) is full.
+
+Merge Segments:
+  * Reduce number of Segments / Sqeeze the space for deleted documents
+  * Automatically / periodically call by ES/Lucene
+  * Force merge: POST /my_index/_forcemerge
+
+Concurrent Query on multiple shards: Query + Fetch
+Query: request -> ES coordinating node -> randomly select the shards and send query requests to nodes -> nodes execute query and send (from+size) sorted doc IDs
+Fetch: Coordinate nodes fetch sorted doc ID list, and merge -> get from+size doc IDs -> fetch the docs by ID from data nodes
+Problems:
+  * Performance: Total processed results: number_of_shard * (from+size) >> size  # Deep pagination
+  * Score accuracy: Each node calcuate the score based on the relevance data on local (independent to each other).
+    - Solution 1: If document count is small, keep only one primary shard; otherwise, try to make sharding evenly
+    - Solution 2: _search?search_type=dfs_query_then_fetch: collect the TF/IDF info on shards and calculate a global relevance score. Not recommended
+
+31. Concurrent control
+Default: Optimistic lock (CAS):
+  * Internal version control: If_seq_no + If_primary_term  (check the old version #, and update if ver==old_ver...)
+  * External version (DB) control: version + version_type=external
+
+
+32. Data modeling
+Functional requirements vs. Performance requirements (SLA)
+  * field type: text/keyword/byte/integer/number/enum/date/boolean/..., sub field type (e.g. pinyin, english, ...)
+  * Query & Tokenization: "enable":false, "index": false, "index_options"/"norms"
+  * Aggregation & sorting: "enable":false, "doc_values"/"fielddata":false, for frequent update/aggregate/query: "eager_global_ordinals":true
+  * Extra storage: Whether need store the original data.
+    - "_source":{"enabled":false} to save disk (e.g. for metrics, cannot see _source, cannot do reindex or update)
+    - "store":true to store the source data for certain fields.
+    - Increase the compress ratio is another solution for saving disk spaces
+Normalization (OLTP, frequent data update) and Denormalization (big data, OLAP, ES)
+Nested objects  (e.g. actor information in a movie):
+  * Mapping: "type":"nested", then ES can create separated index for nested objects
+  * Query: "nested": {"path": "nested_field", "query": {...., {"match": {"nested_field.sub_field":"query_value"}}}}
+Join: Decouple the Parent/Child: Updating child won't re-index. (e.g. blog and comments)
+  * Mapping: "some_relation_name":{"type":"join", "relations": {"parent_field_name": "child_field_name"}
+  * Document: {...., "some_relation_name":{"name": "parent_field_name|child_field_name"}} to indicate this is a parent/child document
+    - When adding/updating child document, needs to specify the ?routing=parent_doc_id to make sure the child doc and parent doc are index to the same shard
+    - Should specify the parent document id in the child document
+Best practices:
+  * Kibana does not support nested and Parent/Children type. May support that in the future
+  * Avoid too many fields: Hard to maintain. Increase cluster master load, need reindex. max: 1000 (customizable)
+    - Turn off dynamic in production: "dynamic": false. By default dynamic is true. e.g. Cookie fields can cause lots of new fields. Make it "nested"
+  * Avoid RegEx/wildcard in query. If start with *, that will cause a disaster.
+  * Avoid null value impact. e.g. aggregation/avg.
+  * Mapping management, iteration:
+    - Functional vs. performance vs. cost vs. storage (memory/disk)
+    - Add metadata to mappings and store it in version control: PUT /myindex/  {"mappings":{"_meta":{"software_version_version":1.0}}}
+    - Easy to add new fields (update_by_query/reindex), but hard to edit/delete fields
+
+33. Update by Query & Reindex APIs:
+Scenarios: Mappings changed / Settings changed / Data migration across clusters
+  * _update_by_query: Rebuild existing index. Reason: ES won't auto reindex the documents written before updating mapping. Need to force update.
+  * _reindex: Rebuild a new index. ES does not allow to update field type in mappings. Create a new index, and import the data from existing index to new index.
+    - Use index alias and query template to hide the changes from the front end
+    - Need to enable _source in source index settings
+    - Reindex does not copy the settings/mappings from the source index. You should setup its mappings, shard counts, replicas prior to running _reindex.
+    - If destination index has some documents, can use "op_type":"create" to avoid writing dup documents (version conflict).
+    - Cross cluster reindex: Update elasticsearch.yml: "reindex.remote.whitelist", and then restart the nodes.
+    - Async call (if take too long): ?wait_for_completion=false, then get a task ID, then GET _tasks?detailed=true&actions=*reindex
+
+34. Ingest node (since ES 5.0)
+By default, all nodes are ingest nodes.
+  * Processors: intercept index/bulk API requests, convert the data and send to index/bulk API
+    - Built in processors & plugins (customized processors)
+    - https://www.elastic.co/guide/en/elasticsearch/reference/master/ingest-processors.html
+    - Set default value for absent/null fields / rename field names / split field values / Painless cripts (customized logic)
+  * Pipeline: multiple intercepters, process in order
+    - Update by query: Need to specify the pipeline to make sure the existing data can be processed by pipeline
+  * Simulate to see the effect: POST _ingest/pipeline/_simulate {}
+  * vs. Logstash: https://www.elastic.co/blog/should-i-use-logstash-or-elasticsearch-ingest-nodes
