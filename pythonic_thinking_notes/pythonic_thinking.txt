@@ -1,0 +1,239 @@
+0. Prefix
+import this # print "The Zen of Python"
+
+The Zen of Python, by Tim Peters
+
+Beautiful is better than ugly.
+Explicit is better than implicit.
+Simple is better than complex.
+Complex is better than complicated.
+Flat is better than nested.
+Sparse is better than dense.
+Readability counts.
+Special cases aren't special enough to break the rules.
+Although practicality beats purity.
+Errors should never pass silently.
+Unless explicitly silenced.
+In the face of ambiguity, refuse the temptation to guess.
+There should be one-- and preferably only one --obvious way to do it.
+Although that way may not be obvious at first unless you're Dutch.
+Now is better than never.
+Although never is often better than *right* now.
+If the implementation is hard to explain, it's a bad idea.
+If the implementation is easy to explain, it may be a good idea.
+Namespaces are one honking great idea -- let's do more of those!
+
+
+1. Know the version
+Can check that in the code
+import sys  # must explicitly import
+print(sys.version)
+print(sys.version_info)
+if sys.version_info.major != 3 or sys.version_info.minor < 7:
+  exit()
+
+Avoid python2 because it will no longer be maintained after 1/1/2020
+
+2. Follow the PEP8 Style Guide
+https://www.python.org/dev/peps/pep-0008/
+* Tripple-quoted strings: Always use double quote
+* Correct spaces (comma is used to separate statements:
+  - def munge(input: AnyStr): ..., def munge() -> PosInt: ..., def munge(input: AnyStr, sep: AnyStr = None, limit=1000): ..., def complex(real, imag=0.0): ..., return magic(r=real, i=imag)
+  - ham[lower:upper:], ham[lower::step], ham[lower+offset : upper+offset], ham[: upper_fn(x) : step_fn(x)], ham[:: step_fn(x)], ham[lower + offset : upper + offset]
+  - x = x*2 - 1, hypot2 = x*x + y*y, c = (a+b) * (a-b)
+  - Just make it easier to understand how the code should work. (Also need to respect the priority of the operators)
+* To reduce the number of changes in a version control tool, alwaya add an extra comma in the end of the last line (of a list, tuple, parameters list, etc.)
+* Documentation: https://www.python.org/dev/peps/pep-0257/
+* _single_leading_underscore: weak "internal use" (protected). "from M import *" does not import objects whose names start with an underscore
+* single_trailing_underscore_: avoid conflicts with Python keyword: e.g. def test(master, class_="ClassName"): ....
+* __double_leading_underscore: When naming a class attribute, invokes name mangling.
+* __double_leading_and_trailing_underscore__: "magic" objects or attributes that live in user-controlled names spaces. Never invent such names; only use them as documented.
+* Never use names "l" or "O"(uppercase). Can't distinguish them between one and zero.
+* Always use self/cls for the first argument to instance/class methods. (Refer to Python static init examples.)
+* Designing for Inheritance: Make methods/variables non-public: It's easier to make it public later than make a public attribute non-public.
+* For simple public attributes, just expose the attribute name. No getter/setters.
+* Module: use __all__ to set public interfaces. And add _ prefix to internal interfaces.
+* Comparisons to singletons like None should always be done with "is" or "is not". Never use "==".
+* Always use a "def" to define a method instead of an assignment statement that binds a lambda expression directly to an identifier. Though it works. For trackbacks and debug.
+* Derive exceptions from Exception class rather than BaseException. The later is reserved for exceptions where catching them is almost always the wrong thing to do.
+* raise X from Y to indicate explicit replacement without losing the original traceback.
+* Use string methods instead of string module. String methods are much faster and share the same API with unicode strings.
+* Use .startwith() and .endwith() instead of slicing: More safe and readable.
+* Function/variable annotations: https://www.python.org/dev/peps/pep-0484 and https://www.python.org/dev/peps/pep-0526
+
+3. bytes vs. str
+bytes has an associated binary encoding: Can be convert into a byte list. (ASCII 8-bit encoding)
+str has an associated char (text) encoding, Can be convert into a char list. (Unicode code points)
+The works the same way (behaviors), but instances are not compatible with each other(>, ==, +, %, etc.)
+Helper funtions:  to_str(bs): bytes.decode('utf-8') ==> str                to_bytes(s): str.encode('utf-8') ==> bytes
+When read/write from/to a file, "r"/"w" can only read/write(str), while "rb"/"wb" mode read/write(bytes). When try to read text from a binary file, Python may thrown error that cannot decode the types with the default encoding (e.g. "utf-8"). To solve this problem, can specify the text encoding: with open('filename', 'r', encoding='cp1252') as f: ....             # cp1252 is a legacy Windows encoding
+Get preferrable (system default) encoding: locale.getpreferredencoding()
+
+4. Prefer format than % (C-style format)
+% has readability issue, and more verbose.
+Built-in format: format(var, "format-string"), e.g. formatted = format(12345.6789, ",.2f")  # 12,345.68
+template_str.format(param1, ...)
+  * '{:<10} = {:.2f}'.format("abcdefghijklm", 12.3456)  # abcdefghij = 12.35
+  * '{} replaces {{}}'.format(1.23)      # 1.23 replaces {}
+  * '{1} = {0}'.format(1, 'a')           # a = 1
+  * '{0} loves himself: {0}'.format(a)   # a loves himself: a
+  * '{name} is {age} years old'.format(name='Kenny', age=10)  # Kenny is 10 years old
+  * Python3.6 introduces f-string: f'{var1} = {var2}'. It's a simplified .format, and the var1 and var2 will be substituted with their values.
+    And even more powerful: f'{key!r:<10} = {value:.2f}'. It allows put expression in {}. e.g. f'#{i+1}: {item.title():<10s} = {round(count)}'.
+    It even allows expressions as part of format specifier options: f'My number is {number:.{places}f}'  # place is a variable, parameterize how many digits to keep.
+When use % {map}, the keys in the map should be in quotes. While .format(param=value), the param names are not quoted.
+
+
+Notes about repr() vs. str():
+__repr__ like toString() in Java. When define a class, implement "def __repr__(self): ..."
+repr() return printable representation of an object. For String, the return contains a quote. For numbers, it return a string more precise than str().
+e.g. repr('abc') # "'abc'"        str('abc') # 'abc'
+
+5. Write Helper Functions instead of Complex Expressions (shared by all programming languages)
+No condition operator (?:) in Python. However, we can take advantage of logical operators "and", "or" to achieve some effects: a = b or c  #if b then a = b else a = c
+An if/else expression provides a more readable alternative to using the Boolean operators or/and in expressions.
+
+6. Prefer Multiple Assignment Unpacking Over Indexing  # for both tuples and list
+tuple(): convert a container object (dict, list) to a tuple. We can also use dict.items() to get a dict_items object.
+
+7. Prefer Enumerate over Range:
+it = enumerate(obj, startIndex): return an iterator which enumerate all items. e.g. There are 5 items, startIndex=3, then the index of items are (3,4,5,6,7).
+To retrieve the items from the iterator: next(it). It returns a tuple (index, key) or None if reach the end of the iterator.
+
+8. Use zip to process iterators in parallel:
+When loop in two iterators which have equal length:
+for v1, v2 in zip(it1, it2): ...   # loop in it1 and it2 in parallel.
+It keeps yielding tuples until any one of the wrapped iterators is exhausted. (no error thrown).
+"itertools.zip_longest". Fill None to the missing items.  import itertools
+      for name, count in itertools.zip_longest(it1, it2)
+
+9. Avoid else blocks after for and while loops: Not intuitive, can be confusing
+else in for and while loop means there is no "break" happened in the loop. If break happened, the else block will not be executed. Otherwise, it will be executed.
+
+10. Prevent repetition with Assignment Expressions: https://www.python.org/dev/peps/pep-0572/
+Walrus operator in v3.8:   if/while (a := b) is not None: ...
+
+11. Know How to Slice Sequences
+Slicing can be extended to any class by implements the __getitem__ and __setitem__ special methods. (ref section 43)
+a[:] == a, a[:5] == a[0:5], a[3:] == a[3:len(a)], a[:-1] == a[:len(a)-1], a[-3:] == a[len(a)-3:]
+Slicing deals properly with start and end indexes that are beyond the boundaries of a list by silently omitting missing items. (no IndexError is thrown)
+Note: When using a[-n:], need to be cautious to check if n > 0. When n == 0, we may expect [] but actually it returns a (with all elements).
+The result of a Slicing is a brand new object. Changing the values in the Slicing won't affect the original list.
+  e.g. b = a[:]  # assert b == a and b is not a
+       c = d     # assert c is d
+       d[1:2] = [3, 4]  # assert c is d        # even after set slice, the object is still the same object
+When used in assignment, the slicing replace the specified range in the original list. Unlike unpacking assignments, the lengths of slice assignment may not equal.
+  e.g. a = [i for i in range(10)], a[2:7] = ['a', 'b']  # a == [0, 1, 'a', 'b', 7, 8, 9], the new list may shrink or grow
+
+12. Avoid Striding and Slicing in a Single Expression (Disagree)
+Stride: the 3rd parameter in Slicing.
+
+13. Prefer Catch-All Unpacking Over Slicing
+Unpacking sequence: first, *var, last = [1, 2, 3, 4, 5]  # first == 1, last == 5, var = [2, 3, 4]. Can use *_
+
+14. Sort by Complex Criteria Using the key Parameter
+array.sort(key=lambda x: (x.name, x.weight), reverse=True)   # reverse sort: first sort by name, then by weight
+For objects sorting, can define the compare method: __lt__(self, other). lt, le, eq, ne, gt, ge. by default, le=lt+eq, ge=gt+eq.
+
+15. Be Cautious When Relying on dict Insertion Ordering
+In python 3.5 and before, iterating over a dict would return keys in arbitrary order, which may not match the order in which the items were inserted.
+object.__dict__.items() and **kwargs are impacted by this feature change. 
+Avoid using this feature for backward compatibility reasons.
+Built-in collections.OrderedDict class has better performance in handling a high rate insertions and popitem calls (e.g. for an LRU cache)
+
+16. Prefer get Over in and KeyError to handle missing dictionary keys
+To add a high cost value:
+if (members := my_map.get(key)) is None:
+    my_map[key] = members = []        # provide a default empty list and set that in the map
+Another way is calling dict.setdefault() method to shorten this: members = my_map.setdefault(key, [])  # The same effect
+
+17. Prefer defaultdict over setdefault to handle missing items in Internal State
+It's an improvement of item 16. Everytime when dict.setdefault() is called, it need a new instance in the 2nd parameter, no matter whether the key exists.
+An ideal way is "lazy init" the instance of the 2nd parameter.
+  from collections import defaultdict
+  # The parameter of the ctor is a function which returns the default value. Only when the key is not present then that function is called.
+  # defaultdict_instance[key] will not trigger any error. If the key does not exist, it create a default value and put into the map, and then return it.
+
+18. Know how to Construct Key-Dependent Default values with __missing__
+defaultdict(factory_func) does not allow user to pass key as a parameter to factory_func. That's a limit.
+Users can create a new class inherit from dict and override __missing__(self, key) to implement this logic: When key is missing, create default v based on the key and then return.
+Users can also customize the behaviors for __getattr__, __setattr__ in a child class of dict.
+
+
+Functions
+
+19. Never Unpack More than three variables when functions return multiple values: Readability, maintainability, error prone
+
+20. Prefer Raising Exceptions to Returning None
+Return None may mix with 0, '', [], False. Just throw exception is better to highlight exceptional cases.
+Can use type annotations to make it clear that a function will never return the value None, even in special situations.
+
+21. Know How Closures Interact with Variable Scope
+nonlocal statement in embedded function: Makes it clear when data is being assigned out of a closure and into another scope.
+global statement: Explicitly indicates that a variable's assignment should go directly into the module scope.
+When the usage of nonlocal starts getting complicated, it's better to wrap the statement in a helper class to make that variable an instance member.
+Avoid using nonlocal statements for anything beyond simple functions
+
+22. Reduce Visual Noise with Variable Positional Arguments
+Positional arguments make the function signature clear. But sometimes we expect to accept a list of variables, we can consider using *args.
+*args has problems and can cause hard-to-detect bugs:
+  * It copy the arguments into a tuple which consume lots of memory. If arguments are from a iterator/generator, may cause OOM.
+  * Hard to update the signature (add/del parameters) without breaking existing callers. Add another parameter at the end also cause problem (it can only be accessed by name).   e.g. def test(a, *args, b): ....              # call by test(1, 2, 3, 4, b=5) or test(1, b=2). b must be at the last position in the parameters list
+
+23. Provide Optional Behavior with Keyword Arguments
+  * Provide default values for keyword arguments and make them optional. Optional keyword arguments should always be passed by keyword instead of by position. 
+  * if function accepts **kwargs, and we have a param_dict, then we can call that func with **param_dict. e.g.:
+    - def myfunc(**kwargs): ...        # param_dict = {....},       myfunc(**param_dict)
+  * Make the function more backward compatible (by providing default values to the new parameters)
+
+24. Use None and DocStrings to specify Dynamic Default Arguments
+Dynamic default arguments: The default value is a result of a function call.
+Actually this will cause a problem. e.g. if the function return current time(datetime.now()), then it only return the time when the function is defined.
+Solution: Set default value as None. And then document the actual behavior in the docstring.
+If the default value is a mutable object (e.g. {}, []), that may cause problem because all function call will access the same object/instance and may mutate it. That will cause unexpected bugs.
+
+25. Enforce Clarity with Keyword-Only and Positional-Only Arguments
+/ in parameter list indicates end of Positional-Only arguments
+* in parameter list indicates start of Keyword-Only arguments
+The parameters between / and * can be called in either positional or keyword manner.
+e.g. def abc(a, /, b=1, *, c=2): return a+b+c       #   abc(1) == 4, abc(1, 2) == 5, abc(1,2,3) error, abc(1, 2, c=5) == 8, abc(1, c=5) == 7
+
+26. Define Function Decorators with functools.wraps
+Manual implementation of a wrapper function:
+def trace(func):  # func is the function to be wrapped
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        do_something_else()
+        return result
+    return wrapper
+@trace
+def function_to_be_wrapped(n):
+    ....
+When "function_to_be_wrapped" is called, actually the system call wrapper() which called "do_something_else()" after finish the logic.
+When assign the function/print function object, or doing the trace, we will find that the function name is not "function_to_be_wrapped", but the "wrapper".
+help(function_to_be_wrapped) also print the "wrapper" as well as the Signature/DocString of "wrapper".
+
+A better solution is to use the wraps helper function from the functools built-in module.
+Put the @wraps(func) above the "def wrapper(*args, **kwargs):".  Don't miss the "func" which should be a parameter of the @wraps.
+
+
+Comprehensions and Generators
+
+27. Use Comprehensions Instead of map and filter
+List comprehension: b = [x * x for x in b]  # b = square(a) for each element in a.    map:  b = map(lambda x:x*x, a)
+b = [x * x for x in b if x % 2 == 1]  # b = square(a) for odd elements in a.     map&filter: b = map(lambda x:x*x, filter(lambda x: x%2 == 1, a))
+map and set can also be created through comprehensions: m = {x : x*x for x in a}  # get a map
+
+28. Avoid more than two control subexpressions in comprehensions: Hard to understand the priority/order.
+
+29. Avoid Repeated Work in Comprehensions by Using Assignment Expressions
+Refer to #10: Using Walrus (assignment expression) since 3.8 to avoid bugs and reduce the calculations
+
+30. Consider generators instead of returning lists
+  * Generator functions return an iterator, rather than all the values of that function
+  * A new list costs lots of memory.
+
+
+
+
+
