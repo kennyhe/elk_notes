@@ -313,4 +313,34 @@ Providing an input iterator to a set of composed generators is a better approach
 Classes and Interfaces
 
 
+37. Compose Classes Instead of Nesting Many Levels of Built-in Types (General OOP idea: Compose >> Inheritence)
+
+
+38. Accept Functions Instead of Classes for Simple Interfaces
+e.g. sort() accept a function. Especially for the functions expect to accept a default object value. If we specify the default object in the definition, then the default value will be instantiated at the class definition, and all function call share that object.
+__call__(self) special method: allows an object/instance to be called just like a function. It also causes the callable built-in function to return True.
+When you need a function to maintain state, consider defining a class that provide the __call__ method instead of defining a stateful closure.
+
+
+39. Use @classmethod Polymorphism to Construct Objects Generically
+@classmethod annotation can make a method more generic.
+It can be used to define alternative constructors for your classes???? (Not quite understand. Need review.)
+Use class method polymorphism to provide generic ways to build and connect many concrete subclasses.????
+
+
+40. Initialize Parent Classes with super     # Need to practice with examples.
+Normally, in ChildClass.__init__(self), we call BaseClass.__init__(self, ...) But it may also breaks in many cases:
+  * Python super ensures that comon super classes in diamond hierachies are run only once (MRO method resolution order)
+    - Solution: super().__init__(param_value, ...)    # pass parameters to super class.
+
+
+41. Consider Composing Functionality with Mixin classes
+
+
+
+
+
+
+
+
 
