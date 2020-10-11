@@ -335,6 +335,118 @@ Normally, in ChildClass.__init__(self), we call BaseClass.__init__(self, ...) Bu
 
 
 41. Consider Composing Functionality with Mixin classes
+Avoid using multiple inheritance with instance attributes and __init__ if mixin classes can achieve the same outcome.
+Use pluggable behaviors at the instance level to provide per-class customization when mix-in classes may require it. (like the interface default methods in Java)
+Mixins can include instance methods or class methods, depending on your needs.
+Compose mixins to create complex functionality from simple behaviors.
+
+
+42. Prefer Public Attributes Over Private Ones: No real encapsulation in Python.
+Private members can be accessed in @classmethod via instance: a_instance.__private_member  # Ok.
+Private fields of a class (ClassName.__private_field) are transfered and can be accessed from instance._ClassName_private_field.
+And we can even find them in instance.__dict__ (note: __dict__ is a field, not a method) 
+we do not rely on the language to prevent us from doing what we want to do. We are all consenting adults and can decide what to do.
+If we do want to make a field private, it's better to document the reason. e.g. protect an immutable field; in case user defines same name in the subclass.
+
+
+43. Inherit from collections.abc for Custom Container Types: like Java List, Set interfaces.
+To provide features like a list, we can implement __getitem__(self, index) and __len__(self) to support sequence[index], item in sequence, and len(sequence).
+But we it is better to inherit from the base virtual classes defined in collections.abc:
+These abstracted classes did not implement some methods and need to be implemented in the child classes.
+e.g. from collections.abc import Sequence   # The sub class of Sequence requires to implement abstract methods __getitem__ and __len__
+That can ensure that your classes to match required interfaces and behaviors.
+
+
+
+Metaclasses and Attributes
+
+
+44. Use Plain attributes Instead of Setter and Getter Methods: Pythonic is opposite to Java.
+For complicated getter and setter functions:
+@property to decorate a getter.
+@propertyname.setter to decorate a setter. It can be used to validate an incoming value, or make a property immutable.
+Example:
+class Property:
+    def __init__(self):
+        self._a = 1        # _a is an internal member
+        self.b = 2
+
+    @property
+    def a(self):              # "a" must be the property name.
+        return self._a
+
+    @a.setter                 # Must specify "@a.setter", "a" should be identical to the property/method name
+    def a(self, param):       # method name must be "a", not anything else. a will be a property, and it is accessed by instance.a, no ()
+        self._a = param       # we can even check if the value of param is valid or not, and raise an exception if necessary
+        self.b = param        # Avoid this. Don't use it to set other properties!!!
+
+p = Property()
+print(p.a, p.b)            # when try to access p.a(), it report an error: 'int' object is not callable
+p.a = 3
+print(p.a, p.b)            # value of a, b are changed to 3. Should avoid changing b in the setter to cause a surprise
+
+Note: 1. Don't let setter make surprise. 2. Ensure the @property methods are fast. Slow or complex work may cause unexpected effects.
+
+
+45. Consider @property Instead of Refactoring attributes
+
+
+46. Use Desciptors for Reusable @property Methods
+__get__(self, instance, instance_type) and __set__(self, instance, value) can make the getter and setter reusable for multiple properties if the behaviros are the same.
+
+from weakref import WeakKeyDictionary to avoid memory leak (track the number of reference objects for GC)
+
+
+47. Use __getattr__, __getattribute__, and __setattr__ for lazy attributes: hooks. Be cautious when defining them!!!
+If a field does not exist, then python will automatically call __getattr__(self, name). We can customize this method for lazy load.
+If we call setattr(self, name, value) to set that value in it, then the value for that field is present and will not call __getattr__ again.
+We can take advantage of this feature to lazy load attributes from dynamic schema, e.g. from DB.
+
+__getattribute__ is called every time an attribute is accessed on an object.
+  * It is called before __getattr__. If the value does not exist, it raises an AttributeError() then call the __getattr__() if it is defined.
+  * Never call getattr() or obj.attr_name otherwise it trigger an infinite loop.
+  * Should return super().__getattribute__(name) to return the attribute value.
+
+Built-in function getattr(obj, "field_name") and hasattr(obj, "field_name") also calls __getattr__ if it is defined.
+
+__setattr__ (be cautious!!!) is always triggered when an attribute assignment is ATTEMPTED (not done!!!).
+  * To set the value, we should call the parent class __setattr__ method: super().__setattr(name, value)
+  * Should never call setattr() or other set method, that triggers infinite loop.
+
+
+48. Validate Subclasses with __init_subclass__:
+Two ways to validate the class fields and methods in sub classes:
+  * Meta classe can be used to inspect or modify a class when a class and all its subclasses are defined (before objs are created).
+    - Create a "Meta class", implement the __new__(meta, name, bases, class_dict) method to validate the sub classes of decorated classes
+    - Usage:  When define a class: class A(metaclass=MetaClass)  # decorate class A with the MetaClass
+    - The logic in __new__ is triggered when the decorated class and/or its subclass is defined
+  * In the base class: def __init_subclass__(cls):... to ensure that subclasses are well formed at the time they are defined, before objects are created.
+    - Must call super().__init_subclass__ in the first line to enable validation in multiple layers of classes and multiple inheritance.
+    - It is only triggered when a subclasses is defined. It does not triggered by the definition of base class.
+
+
+49. Register Class Existence with __init_subclass__:
+Scenairos: We need to register classes in the case of serialization/deserialization, DB object-relational mappings(ORMs), extensible plug-in systems, callback hooks.
+Of course we can also achieve this by Meta classes and implementing __new__(...) method (it is called every time when a base class is subclassed in a program.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
