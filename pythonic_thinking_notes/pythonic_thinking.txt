@@ -90,8 +90,9 @@ When use % {map}, the keys in the map should be in quotes. While .format(param=v
 Notes about repr() vs. str():
 __repr__ like toString() in Java. When define a class, implement "def __repr__(self): ..."
 repr() return printable representation of an object. For String, the return contains a quote. For numbers, it return a string more precise than str().
-e.g. repr('abc') # "'abc'"        str('abc') # 'abc'
-
+  * '{name!r}' or '{name!s}': !s (apply str()) and !r (apply repr()) can be used to convert the value before it is formatted.
+  * e.g. repr('abc') # "'abc'"        str('abc') # 'abc'
+ref: https://docs.python.org/3.8/tutorial/inputoutput.html#fancier-output-formatting
 
 5. Write Helper Functions instead of Complex Expressions (shared by all programming languages)
 No condition operator (?:) in Python. However, we can take advantage of logical operators "and", "or" to achieve some effects: a = b or c  #if b then a = b else a = c
@@ -398,6 +399,7 @@ from weakref import WeakKeyDictionary to avoid memory leak (track the number of 
 
 
 47. Use __getattr__, __getattribute__, and __setattr__ for lazy attributes: hooks. Be cautious when defining them!!!
+https://docs.python.org/3/reference/datamodel.html#object.__getattr__
 If a field does not exist, then python will automatically call __getattr__(self, name). We can customize this method for lazy load.
 If we call setattr(self, name, value) to set that value in it, then the value for that field is present and will not call __getattr__ again.
 We can take advantage of this feature to lazy load attributes from dynamic schema, e.g. from DB.
@@ -428,12 +430,30 @@ Two ways to validate the class fields and methods in sub classes:
 49. Register Class Existence with __init_subclass__:
 Scenairos: We need to register classes in the case of serialization/deserialization, DB object-relational mappings(ORMs), extensible plug-in systems, callback hooks.
 Of course we can also achieve this by Meta classes and implementing __new__(...) method (it is called every time when a base class is subclassed in a program.
+Prefer __init_subclass__ over standard metaclass machinery because it's clearer and easier to understand. Need not maintain an extra Meta class.
+
+
+50. Annotate Class Attributes with __set_name__:
+Use Metaclass to modify or annotate properties after a class is defined but before using it.
+e.g. When a subclass is created and added some new fields, then the meta class can modify the properties in the field values.
+__set_name__(self, owner, name): To take account the owner(surrounding) class and its property names. It's triggered when current class instance is created in the class attribute of the owner class.
+__set__(self, owner, value) is called when calling "owner.atttribute_name = 'something'", the attribute_name is identical to a class property name.
+__get__(self, owner, owner_type) is called when calling "owner.atttribute_name" is read.
+
+
+51. Prefer Class decorators over Metaclasses for Composable class extensions:
+Ref to item 26: functools.wraps.
+A class decorator is a simple function that receives a class instance as a parameter and returns either a new class or a modified version of the original class.
+They are useful when we want to modify every method or attribute of a class with a minimal boilerplate.
+It looks like Java annotation. And we can apply multiple decorators to exend the same class without conflicts.
+We cannot combine the Metaclasses.
 
 
 
+Concurrency and Parallelism
 
 
-
+52. Use subprocess to Manage Child Processes
 
 
 
