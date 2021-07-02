@@ -1,0 +1,80 @@
+kennyhe
+Hc2d54
+
+
+To upgrade software
+-------------------
+Change the route table and remove the route to the host-only network:
+sudo route del default dev enp0s8
+
+Then update:
+sudo apt update
+yes |sudo apt upgrade
+yes |sudo apt autoremove
+sudo shutdown now
+
+
+To change host name permanently:
+# sudo hostnamectl set-hostname newName
+sudo vi /etc/hostname
+sudo vi /etc/cloud/cloud.cfg   # preserve_hostname: true
+
+
+Change IP:
+cd /etc/netplan
+update the file.
+sudo netplan apply
+ifconfig  #check the IP changed
+
+
+Hosts
+-----
+192.168.56.21 kube1
+192.168.56.22 kube2
+192.168.50.18 kube-master
+192.168.56.20 kube-base
+
+192.168.56.198 data-eng
+
+
+
+Init cluster
+------------
+
+Master node:
+sudo kubeadm init --apiserver-advertise-address=192.168.56.200
+#sudo kubeadm init --cri-socket /var/run/dockershim.sock --ignore-preflight-errors=all --pod-network-cidr=192.168.66.0/24 --apiserver-advertise-address=192.168.56.200
+
+Output:
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+Then you can join any number of worker nodes by running the following on each as root:
+
+Selected weavenet:
+https://www.weave.works/docs/net/latest/kubernetes/kube-addon/
+kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+
+kubeadm join 192.168.50.18:6443 --token w1wwc0.nmqzrlz90m7didad \
+    --discovery-token-ca-cert-hash sha256:17683d6f7638680002ea036ca9e86e033122e7f0bd920feb396aa05549fd6e18 
+
+
+
+
+Dashboard
+---------
+1. https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/
+2. command:
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0/aio/deploy/recommended.yaml
+  kubectl proxy
+
+3. Create a tunnel to access it from localhost:
+ssh -L 8001:127.0.0.1:8001 192.168.50.18
+
+4. URL:
+http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+
+5. Create token to access:
+https://stackoverflow.com/questions/46664104/how-to-sign-in-kubernetes-dashboard
+https://stackoverflow.com/questions/46664104/how-to-sign-in-kubernetes-dashboard#:~:text=Just%20use%20kubectl%20%2Dn%20kube,it%20in%20the%20token%20box.
+
+Token:
