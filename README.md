@@ -35,3 +35,8 @@ https://www.amazon.com/Data-Engineering-Python-datasets-pipelines/dp/183921418X
 
 https://www.google.com/books/edition/Data_Engineering_with_Python/9RYFEAAAQBAJ
 
+## scala_notes
+Notes of learning Scala:
+1. https://www.bilibili.com/video/BV1eD4y197Tc
+2. https://www.bilibili.com/video/BV1oJ411m7z3
+3. https://www.coursera.org/learn/scala-functional-programming/home/welcome
