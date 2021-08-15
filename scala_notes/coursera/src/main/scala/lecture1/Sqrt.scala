@@ -2,7 +2,9 @@ package lecture1
 import Math._
 
 object Sqrt {
-  def sqrt(x: Double) = {
+  def sqrt(x: Double): Double = {
+    if (x == 0) then return 0
+    if x < 0 then throw new RuntimeException(s"$x < 0")
 
     def sqrtIter(guess: Double): Double =
       if (isGoodEnough(guess)) guess

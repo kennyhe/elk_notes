@@ -2,6 +2,17 @@ package lecture1
 import lecture1.Sqrt.sqrt
 
 class SqrtTest extends munit.FunSuite:
+  test("sqrt(0) is 0") {
+    val x = sqrt(0)
+    assert(x == 0)
+  }
+
+  test("sqrt(negative number)") {
+    interceptMessage[java.lang.RuntimeException]("-1.0 < 0"){
+      val x = sqrt(-1.0)
+    }
+  }
+
   test("A normal number") {
     val x = sqrt(10)
     assert(3.1622 < x && x < 3.1623)
